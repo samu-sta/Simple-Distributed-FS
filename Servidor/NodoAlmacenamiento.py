@@ -1,12 +1,12 @@
 import socket
 import threading
+import pickle
 
-# Nodo de almacenamiento simulado
 class NodoAlmacenamiento(threading.Thread):
     def __init__(self, puerto):
         threading.Thread.__init__(self)
         self.puerto = puerto
-        self.almacenamiento = {}  # Diccionario para almacenar los fragmentos
+        self.almacenamiento = {}
 
     def run(self):
         servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -15,29 +15,62 @@ class NodoAlmacenamiento(threading.Thread):
         print(f"Nodo de almacenamiento activo en puerto {self.puerto}")
 
         while True:
-            try:
-                cliente, direccion = servidor.accept()
-                while True:
-                    datos = cliente.recv(1024).decode()
-                    print(f"Datos recibidos en nodo {self.puerto}: {datos}")
+            cliente, direccion = servidor.accept()
+            hilo = threading.Thread(target=self.manejar_cliente, args=(cliente,))
+            hilo.start()
+
+    def manejar_cliente(self, conexion):
+        with conexion:
+            while True:
+                try:
+                    datos = conexion.recv(4096)
                     if not datos:
                         break
-                    if datos.startswith("GUARDAR"):
-                        _, archivo, fragmento, contenido = datos.split(" ", 3)
-                        clave = f"{archivo}_{fragmento}"
-                        self.almacenamiento[clave] = contenido
-                        cliente.send(f"Fragmento {fragmento} de {archivo} guardado en nodo {self.puerto}".encode())
-                    elif datos.startswith("LEER"):
-                        _, archivo, fragmento = datos.split(" ", 2)
-                        clave = f"{archivo}_{fragmento}"
-                        contenido = self.almacenamiento.get(clave, "Fragmento no encontrado")
-                        cliente.send(contenido.encode())
-                cliente.close()
-            except Exception as e:
-                print(f"Error en el nodo de almacenamiento {self.puerto}: {e}")
+                    peticion = pickle.loads(datos)
+                    respuesta = self.procesar_peticion(peticion)
+                    conexion.sendall(pickle.dumps(respuesta))
+                except Exception as e:
+                    print(f"Error en NodoAlmacenamiento {self.puerto}: {e}")
+                    break
+
+    def guardar_fragmento(self, archivo, fragmento, contenido):
+        clave = f"{archivo}_{fragmento}"
+        self.almacenamiento[clave] = contenido
+        return {'status': f"Fragmento {fragmento} de {archivo} guardado en nodo {self.puerto}"}
+
+    def leer_fragmento(self, archivo, fragmento):
+        clave = f"{archivo}_{fragmento}"
+        contenido = self.almacenamiento.get(clave)
+        if contenido is None:
+            return {'error': 'Fragmento no encontrado'}
+        return {'contenido': contenido}
+
+    def eliminar_fragmento(self, archivo, fragmento):
+        clave = f"{archivo}_{fragmento}"
+        if clave in self.almacenamiento:
+            del self.almacenamiento[clave]
+            return {'status': f"Fragmento {fragmento} de {archivo} eliminado en nodo {self.puerto}"}
+        else:
+            return {'error': 'Fragmento no encontrado'}
+
+    def procesar_peticion(self, peticion):
+        comando = peticion.get('comando')
+        archivo = peticion.get('archivo')
+        fragmento = peticion.get('fragmento')
+        print(f"Nodo {self.puerto}: {comando} {archivo} {fragmento}")
+
+        if comando == 'guardar':
+            return self.guardar_fragmento(archivo, fragmento, peticion.get('contenido'))
+        elif comando == 'leer':
+            return self.leer_fragmento(archivo, fragmento)
+        elif comando == 'eliminar':
+            return self.eliminar_fragmento(archivo, fragmento)
+        else:
+            return {'error': 'Comando no reconocido'}
 
 # Iniciar nodos de almacenamiento
-nodo1 = NodoAlmacenamiento(8001)
-nodo2 = NodoAlmacenamiento(8002)
-nodo1.start()
-nodo2.start()
+if __name__ == "__main__":
+    nodo1 = NodoAlmacenamiento(8001)
+    nodo2 = NodoAlmacenamiento(8002)
+    nodo1.start()
+    nodo2.start()

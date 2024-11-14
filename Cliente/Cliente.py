@@ -2,7 +2,7 @@ import socket
 import pickle
 
 class Cliente:
-    def __init__(self, host='localhost', port=5000):
+    def __init__(self, host='localhost', port=8000):
         self.host = host
         self.port = port
 
@@ -28,10 +28,3 @@ class Cliente:
             s.sendall(pickle.dumps(data))
             response = s.recv(1024)
             return pickle.loads(response)
-
-# Ejemplo de uso
-if __name__ == "__main__":
-    cliente = Cliente()
-    cliente.eliminar_archivo('archivo1.txt')
-    respuesta = cliente.leer_archivo('archivo1.txt')
-    print(respuesta)
